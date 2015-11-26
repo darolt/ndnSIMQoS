@@ -1,0 +1,7 @@
+#!/bin/sh
+# Linux users have to change $8 to $9 
+awk '
+BEGIN { print "START" } 
+{ print $1, $2, $7}	
+END { print " - DONE -" } 
+'
