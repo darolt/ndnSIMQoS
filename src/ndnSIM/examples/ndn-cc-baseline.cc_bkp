@@ -1,0 +1,160 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Yaogong Wang <ywang15@ncsu.edu>
+ */
+
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/ndnSIM-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/ndn-shaper-net-device-face.h"
+#include <ns3/ndnSIM/utils/tracers/ndn-l3-aggregate-tracer.h>
+#include <ns3/ndnSIM/utils/tracers/ndn-l3-rate-tracer.h>
+#include <ns3/ndnSIM/utils/tracers/ndn-app-delay-tracer.h>
+
+using namespace ns3;
+
+int main (int argc, char *argv[]) {
+
+  std::string qsize ("60"), rate_trace ("rate-trace.txt");
+  bool randomPacketSize = true;
+
+  ndn::ShaperNetDeviceFace::QueueMode mode_enum;
+  mode_enum = ndn::ShaperNetDeviceFace::QUEUE_MODE_DROPTAIL;
+
+  // queue size
+  uint32_t qsize_int;
+  std::istringstream (qsize) >> qsize_int;
+
+  // Setup topology
+  NodeContainer nodes;
+  nodes.Create (4);
+
+  Config::SetDefault ("ns3::DropTailQueue::MaxPackets", StringValue (qsize));
+
+  PointToPointHelper p2p;
+  p2p.SetDeviceAttribute("DataRate", StringValue ("100Mbps"));
+  p2p.SetChannelAttribute("Delay", StringValue ("10ms"));
+  p2p.Install (nodes.Get (0), nodes.Get (1));
+  p2p.Install (nodes.Get (2), nodes.Get (3));
+  p2p.SetDeviceAttribute("DataRate", StringValue ("10Mbps"));
+  p2p.Install (nodes.Get (1), nodes.Get (2));
+
+  // Getting containers for the consumer/producer
+  Ptr<Node> c1 = nodes.Get (0);
+  Ptr<Node> p1 = nodes.Get (3);
+  Ptr<Node> r1 = nodes.Get (1);
+  Ptr<Node> r2 = nodes.Get (2);
+
+  // Install CCNx stack on all nodes (NDN Stack?)
+  ndn::StackHelper ndnHelper;
+  ndnHelper.SetContentStore ("ns3::ndn::cs::Nocache");
+  ndnHelper.SetForwardingStrategy ("ns3::ndn::fw::BestRoute", "EnableNACKs", "true");
+  ndnHelper.EnableShaper (true, qsize_int, 0.98, Seconds(0.01), mode_enum);
+  //Ptr<ndn::FaceContainer> faces = 
+  ndnHelper.Install(r1);
+  //DynamicCast<ndn::ShaperNetDeviceFace> (*(faces->Begin()))->SetInRate(DataRateValue(DataRate("1Mbps")));
+  ndnHelper.Install(r2);
+
+  ndnHelper.SetForwardingStrategy ("ns3::ndn::fw::BestRoute"); // No hop-by-hop interest shaping, no NACKs.
+  ndnHelper.EnableShaper (false, qsize_int, 0.98, Seconds(0.1), mode_enum);
+
+  ndnHelper.Install(c1);
+  ndnHelper.Install(p1);
+
+  // Installing global routing interface on all nodes
+  ndn::GlobalRoutingHelper ndnGlobalRoutingHelper;
+  ndnGlobalRoutingHelper.InstallAll ();
+
+  // CONSUMERS
+  ndn::AppHelper *consumerHelper1 = new ndn::AppHelper ("ns3::ndn::ConsumerWindowAIMD");
+  consumerHelper1->SetPrefix ("/p1");
+  consumerHelper1->SetAttribute ("StartTime", TimeValue (Seconds (0.0)));
+  consumerHelper1->SetAttribute ("StopTime", TimeValue (Seconds (20.0)));
+  ApplicationContainer app1 = consumerHelper1->Install (c1);
+  DynamicCast<ndn::Consumer> (app1.Get(0))->SetPriority(0);
+
+  ndn::AppHelper *consumerHelper2 = new ndn::AppHelper ("ns3::ndn::ConsumerWindowAIMD");
+  consumerHelper2->SetPrefix ("/p2");
+  consumerHelper2->SetAttribute ("StartTime", TimeValue (Seconds (0.0)));
+  consumerHelper2->SetAttribute ("StopTime", TimeValue (Seconds (20.0)));
+  ApplicationContainer app2 = consumerHelper2->Install (c1);
+  DynamicCast<ndn::Consumer> (app2.Get(0))->SetPriority(1);
+
+  ndn::AppHelper *consumerHelper3 = new ndn::AppHelper ("ns3::ndn::ConsumerWindowAIMD");
+  consumerHelper3->SetPrefix ("/p3");
+  consumerHelper3->SetAttribute ("StartTime", TimeValue (Seconds (0.0)));
+  consumerHelper3->SetAttribute ("StopTime", TimeValue (Seconds (20.0)));
+  ApplicationContainer app3 = consumerHelper3->Install (c1);
+  DynamicCast<ndn::Consumer> (app3.Get(0))->SetPriority(2);
+
+  ndn::AppHelper *consumerHelper4 = new ndn::AppHelper ("ns3::ndn::ConsumerWindowAIMD");
+  consumerHelper4->SetPrefix ("/p4");
+  consumerHelper4->SetAttribute ("StartTime", TimeValue (Seconds (0.0)));
+  consumerHelper4->SetAttribute ("StopTime", TimeValue (Seconds (20.0)));
+  ApplicationContainer app4 = consumerHelper4->Install (c1);
+  DynamicCast<ndn::Consumer> (app4.Get(0))->SetPriority(3);
+
+  delete consumerHelper1;
+  delete consumerHelper2;
+  delete consumerHelper3;
+  delete consumerHelper4;
+  
+  // Register prefix with global routing controller and install producer
+  ndn::AppHelper producerHelper ("ns3::ndn::Producer");
+  
+  if (!randomPacketSize) {
+    producerHelper.SetAttribute ("PayloadSize", StringValue("1000"));
+  } else {
+      producerHelper.SetAttribute ("RandomPayloadSizeMin", StringValue("600"));
+      producerHelper.SetAttribute ("RandomPayloadSizeMax", StringValue("1400"));
+  }
+  
+  // PRODUCERS
+  ndnGlobalRoutingHelper.AddOrigins ("/p1", p1);
+  producerHelper.SetPrefix ("/p1");
+  producerHelper.Install (p1);
+  ndnGlobalRoutingHelper.AddOrigins ("/p2", p1);
+  producerHelper.SetPrefix ("/p2");
+  producerHelper.Install (p1);
+
+  ndnGlobalRoutingHelper.AddOrigins ("/p3", p1);
+  producerHelper.SetPrefix ("/p3");
+  producerHelper.Install (p1);
+  ndnGlobalRoutingHelper.AddOrigins ("/p4", p1);
+  producerHelper.SetPrefix ("/p4");
+  producerHelper.Install (p1);
+
+
+  producerHelper.SetAttribute ("PayloadSize", StringValue("1000"));
+  ndnGlobalRoutingHelper.AddOrigins ("/c1", c1);
+  producerHelper.SetPrefix ("/c1");
+  producerHelper.Install (c1);
+
+
+  // Calculate and install FIBs
+  ndnGlobalRoutingHelper.CalculateRoutes ();
+
+  Simulator::Stop (Seconds (20.1));
+
+  boost::tuple< boost::shared_ptr<std::ostream>, std::list<Ptr<ndn::L3RateTracer> > >
+    rateTracers = ndn::L3RateTracer::InstallAll (rate_trace, Seconds (1.0));
+
+  Simulator::Run ();
+  Simulator::Destroy ();
+
+  return 0;
+}

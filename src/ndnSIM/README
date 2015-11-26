@@ -1,0 +1,36 @@
+This code is forked from ndnSIM (https://github.com/NDN-Routing/ndnSIM) and
+implements our custom congestion control mechanism. For more details of our
+proposal, please refer to our SIGCOMM ICN'13 workshop paper:
+
+http://conferences.sigcomm.org/sigcomm/2013/papers/icn/p55.pdf
+
+or Chapter 6 of Yaogong's PhD dissertation:
+
+http://repository.lib.ncsu.edu/ir/bitstream/1840.16/9009/1/etd.pdf
+
+To use this code:
+
+1. Install boost library:
+	wget http://downloads.sourceforge.net/project/boost/boost/1.53.0/boost_1_53_0.tar.bz2
+	tar jxf boost_1_53_0.tar.bz2
+	cd boost_1_53_0
+	./bootstrap.sh
+	sudo ./b2 --prefix=/usr/local install
+
+2. Clone the repositories:
+	git clone git://github.com/cawka/ns-3-dev-ndnSIM.git ns-3
+	git clone git://github.com/wygivan/ndnSIM.git ns-3/src/ndnSIM
+
+3. Compile the code:
+	cd ns-3/
+	git checkout ns-3.17-ndnSIM-0.5
+	./waf configure --boost-includes=/usr/local/include --boost-libs=/usr/local/lib --enable-examples --disable-python
+	./waf
+
+4. Run tests. For instance:
+	LD_LIBRARY_PATH=/usr/local/lib NS_LOG=ndn.ConsumerWindowRelentless ./waf --run ndn-cc-convergence
+
+5. Additional tests can be found at ns-3/src/ndnSIM/examples/ndn-cc-*.cc
+
+The procedure above has been verified on Ubuntu 12.04. If you encounter any
+problem during compilation, please refer to http://ndnsim.net
